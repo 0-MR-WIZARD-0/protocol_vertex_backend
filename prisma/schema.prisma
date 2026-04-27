@@ -4,7 +4,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -15,11 +14,15 @@ model User {
   createdAt    DateTime @default(now())
 
   sessions     Session[]
+  goals        Goal[]
+  tasks        Task[]
+  reminders    Reminder[]
 }
 
 model Session {
   id               String   @id @default(uuid())
   userId           String
+  tokenId          String @unique
   refreshTokenHash String
   expiresAt        DateTime
   createdAt        DateTime @default(now())
@@ -27,7 +30,115 @@ model Session {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+model Goal {
+  id          String   @id @default(uuid())
+  userId      String
+  title       String
+  description String?
+  deadline    DateTime
+
+  repeatType  RepeatType
+  repeatDays  Int[]
+  timesPerDay Int
+
+  isDream     Boolean    @default(false)
+  dreamId     String?
+  status      GoalStatus @default(PENDING)
+
+  createdAt   DateTime   @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dream Dream? @relation(fields: [dreamId], references: [id])
+
+  logs  GoalLog[]
+}
+
+model Dream {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+
+  goals Goal[]
+}
+
+model GoalLog {
+  id        String   @id @default(uuid())
+  goalId    String
+  date      DateTime
+
+  status    LogStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+
+  goal Goal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  appeals Appeal[]
+
+  @@unique([goalId, date])
+}
+
+model Task {
+  id          String   @id @default(uuid())
+  userId      String
+  title       String
+  description String?
+  date        DateTime
+
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Reminder {
+  id          String   @id @default(uuid())
+  userId      String
+  title       String
+  description String?
+  date        DateTime
+
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Appeal {
+  id        String   @id @default(uuid())
+  goalLogId String
+  message   String
+
+  status    AppealStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+
+  goalLog GoalLog @relation(fields: [goalLogId], references: [id], onDelete: Cascade)
+}
+
 enum Role {
   USER
   ADMIN
+}
+
+enum RepeatType {
+  DAILY
+  WEEKDAYS
+  WEEKENDS
+  CUSTOM
+}
+
+enum GoalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum LogStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AppealStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
