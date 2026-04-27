@@ -22,6 +22,9 @@ export class CreateGoalDto {
   description?: string;
 
   @IsString()
+  startDate: string;
+
+  @IsString()
   deadline: string;
 
   @IsEnum(RepeatType)

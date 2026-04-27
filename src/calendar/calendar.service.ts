@@ -1,108 +1,133 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-return */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { Goal, GoalLog } from '@prisma/client';
+
+type GoalWithLogs = Goal & { logs: GoalLog[] };
+
+type DayGoal = {
+  id: string;
+  title: string;
+  times: string[];
+  completedTimes: string[];
+  deadline: Date;
+};
 
 @Injectable()
 export class CalendarService {
   constructor(private prisma: PrismaService) {}
 
+  private toDateKey(date: Date): string {
+    return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 10);
+  }
+
+  private getSlots(goal: Goal): string[] {
+    if (goal.timesPerDay === 1) return ['day'];
+    if (goal.timesPerDay === 2) return ['morning', 'evening'];
+    if (goal.timesPerDay === 3) return ['morning', 'day', 'evening'];
+    return ['day'];
+  }
+
   async getDay(userId: string, date: Date) {
-    const start = new Date(date);
-    start.setHours(0, 0, 0, 0);
+    const goals = (await this.prisma.goal.findMany({
+      where: {
+        userId,
+        status: 'APPROVED',
+      },
+      include: {
+        logs: true,
+      },
+    })) as GoalWithLogs[];
 
-    const end = new Date(date);
-    end.setHours(23, 59, 59, 999);
+    const dateKey = this.toDateKey(date);
 
-    const [goals, tasks, reminders] = await Promise.all([
-      this.prisma.goal.findMany({
-        where: {
-          userId,
-          status: 'APPROVED',
-        },
-        include: {
-          logs: {
-            where: {
-              date: {
-                gte: start,
-                lte: end,
-              },
-            },
-          },
-        },
-      }),
+    const result: DayGoal[] = [];
 
-      this.prisma.task.findMany({
-        where: {
-          userId,
-          date: {
-            gte: start,
-            lte: end,
-          },
-        },
-      }),
+    for (const goal of goals) {
+      if (!this.isGoalActive(goal, date)) continue;
 
-      this.prisma.reminder.findMany({
-        where: {
-          userId,
-          date: {
-            gte: start,
-            lte: end,
-          },
-        },
-      }),
-    ]);
+      const logsToday = goal.logs.filter(
+        (l) =>
+          this.toDateKey(new Date(l.date)) === dateKey &&
+          l.status === 'APPROVED',
+      );
+
+      const completedTimes: string[] = Array.from(
+        new Set(
+          logsToday
+            .map((l) => l.timeSlot)
+            .filter((t): t is string => typeof t === 'string'),
+        ),
+      );
+
+      result.push({
+        id: goal.id,
+        title: goal.title,
+        times: this.getSlots(goal),
+        completedTimes,
+        deadline: goal.deadline,
+      });
+    }
 
     return {
       date,
-      goals: goals.map((goal) => ({
-        id: goal.id,
-        title: goal.title,
-        logStatus: goal.logs[0]?.status || null,
-      })),
-      tasks,
-      reminders,
+      goals: result,
+      tasks: [],
+      reminders: [],
     };
   }
 
   async getMonth(userId: string, year: number, month: number) {
     const start = new Date(year, month - 1, 1);
-    const end = new Date(year, month, 0, 23, 59, 59);
+    const end = new Date(year, month, 0);
 
-    const logs = await this.prisma.goalLog.groupBy({
-      by: ['date'],
-      _count: true,
-      where: {
-        status: 'APPROVED',
-        date: {
-          gte: start,
-          lte: end,
-        },
-        goal: {
-          userId,
-        },
-      },
-    });
-
-    const totalGoals = await this.prisma.goal.count({
+    const goals = (await this.prisma.goal.findMany({
       where: {
         userId,
         status: 'APPROVED',
       },
-    });
+      include: {
+        logs: true,
+      },
+    })) as GoalWithLogs[];
 
-    const days: Record<string, any> = {};
+    const days: Record<
+      string,
+      { total: number; done: number; percent: number }
+    > = {};
 
-    for (const log of logs) {
-      const key = log.date.toISOString().split('T')[0];
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const date = new Date(d.getTime());
+      const key = this.toDateKey(date);
 
-      days[key] = {
-        done: log._count,
-        total: totalGoals,
-        percent: totalGoals === 0 ? 0 : (log._count / totalGoals) * 100,
-      };
+      let total = 0;
+      let done = 0;
+
+      for (const goal of goals) {
+        if (!this.isGoalActive(goal, date)) continue;
+
+        const slots = this.getSlots(goal);
+        total += slots.length;
+
+        const logs = goal.logs.filter(
+          (l) =>
+            this.toDateKey(new Date(l.date)) === key && l.status === 'APPROVED',
+        );
+
+        const uniqueSlots = new Set(logs.map((l) => l.timeSlot));
+
+        done += uniqueSlots.size;
+      }
+
+      if (total > 0) {
+        days[key] = {
+          total,
+          done,
+          percent: Math.round((done / total) * 100),
+        };
+      }
     }
 
     return {
@@ -112,21 +137,14 @@ export class CalendarService {
     };
   }
 
-  private mapGoal(goal: any, date: Date) {
-    const isActive = this.isGoalActive(goal, date);
+  private isGoalActive(goal: Goal, date: Date): boolean {
+    const d = this.toDateKey(date);
+    const start = this.toDateKey(new Date(goal.startDate));
+    const end = this.toDateKey(new Date(goal.deadline));
 
-    const log = goal.logs.find((l) => this.sameDay(l.date, date));
+    if (d < start || d > end) return false;
 
-    return {
-      id: goal.id,
-      title: goal.title,
-      isActive,
-      status: log?.status || null,
-    };
-  }
-
-  private isGoalActive(goal: any, date: Date) {
-    const day = date.getDay();
+    const day = new Date(date).getDay();
 
     switch (goal.repeatType) {
       case 'DAILY':
@@ -140,13 +158,5 @@ export class CalendarService {
       default:
         return false;
     }
-  }
-
-  private sameDay(a: Date, b: Date) {
-    return (
-      a.getFullYear() === b.getFullYear() &&
-      a.getMonth() === b.getMonth() &&
-      a.getDate() === b.getDate()
-    );
   }
 }

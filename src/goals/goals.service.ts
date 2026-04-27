@@ -1,14 +1,21 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable prefer-const */
 /* eslint-disable @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-import { Injectable, ForbiddenException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class GoalsService {
   constructor(private prisma: PrismaService) {}
+
+  private toDateKey(date: Date): string {
+    return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 10);
+  }
 
   async create(userId: string, dto: any) {
     return this.prisma.goal.create({
@@ -16,7 +23,9 @@ export class GoalsService {
         userId,
         title: dto.title,
         description: dto.description,
-        deadline: new Date(dto.deadline),
+
+        startDate: new Date(dto.startDate + 'T00:00:00'),
+        deadline: new Date(dto.deadline + 'T23:59:59'),
 
         repeatType: dto.repeatType,
         repeatDays: dto.repeatDays || [],
@@ -37,19 +46,56 @@ export class GoalsService {
     });
   }
 
-  async markDone(userId: string, goalId: string, date: string) {
+  async mark(userId: string, goalId: string, dto: any) {
     const goal = await this.prisma.goal.findUnique({
       where: { id: goalId },
     });
 
-    if (!goal || goal.userId !== userId) {
-      throw new ForbiddenException();
-    }
+    if (!goal) throw new Error('Goal not found');
 
-    return this.prisma.goalLog.create({
-      data: {
+    const dateKey = this.toDateKey(new Date(dto.date));
+
+    const normalizedDate = new Date(dateKey + 'T00:00:00'); // ✅
+
+    return this.prisma.goalLog.upsert({
+      where: {
+        goalId_date_timeSlot: {
+          goalId,
+          date: normalizedDate,
+          timeSlot: dto.timeSlot,
+        },
+      },
+      update: {},
+      create: {
         goalId,
-        date: new Date(date),
+        date: normalizedDate,
+        timeSlot: dto.timeSlot,
+        status: goal.isDream ? 'PENDING' : 'APPROVED',
+      },
+    });
+  }
+
+  async unmark(userId: string, goalId: string, dto: any) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) throw new Error('User not found');
+
+    const valid = await bcrypt.compare(dto.password, user.passwordHash);
+
+    if (!valid) throw new Error('Wrong password');
+
+    const dateKey = this.toDateKey(new Date(dto.date));
+    const normalizedDate = new Date(dateKey + 'T00:00:00'); // ✅
+
+    return this.prisma.goalLog.delete({
+      where: {
+        goalId_date_timeSlot: {
+          goalId,
+          date: normalizedDate,
+          timeSlot: dto.timeSlot,
+        },
       },
     });
   }
@@ -63,10 +109,16 @@ export class GoalsService {
       include: { logs: true },
     });
 
+    const dateKey = this.toDateKey(date);
+
     return goals.map((goal) => {
       const isActive = this.isGoalActive(goal, date);
 
-      const log = goal.logs.find((l) => this.sameDay(l.date, date));
+      const log = goal.logs.find(
+        (l) =>
+          this.toDateKey(new Date(l.date)) === dateKey &&
+          l.status === 'APPROVED',
+      );
 
       return {
         id: goal.id,
@@ -87,32 +139,38 @@ export class GoalsService {
 
     const logs = goal.logs
       .filter((l) => l.status === 'APPROVED')
-      .sort((a, b) => b.date.getTime() - a.date.getTime());
+      .map((l) => this.toDateKey(new Date(l.date)));
 
     let streak = 0;
-    const currentDate = new Date();
+    let current = new Date();
 
     while (true) {
-      const active = this.isGoalActive(goal, currentDate);
+      const dateKey = this.toDateKey(current);
+
+      const active = this.isGoalActive(goal, current);
 
       if (!active) {
-        currentDate.setDate(currentDate.getDate() - 1);
+        current.setDate(current.getDate() - 1);
         continue;
       }
 
-      const hasLog = logs.find((l) => this.sameDay(l.date, currentDate));
-
-      if (!hasLog) break;
+      if (!logs.includes(dateKey)) break;
 
       streak++;
-      currentDate.setDate(currentDate.getDate() - 1);
+      current.setDate(current.getDate() - 1);
     }
 
     return streak;
   }
 
-  private isGoalActive(goal: any, date: Date) {
-    const day = date.getDay();
+  private isGoalActive(goal: any, date: Date): boolean {
+    const d = this.toDateKey(date);
+    const start = this.toDateKey(new Date(goal.startDate));
+    const end = this.toDateKey(new Date(goal.deadline));
+
+    if (d < start || d > end) return false;
+
+    const day = new Date(date).getDay();
 
     switch (goal.repeatType) {
       case 'DAILY':
@@ -128,11 +186,22 @@ export class GoalsService {
     }
   }
 
-  private sameDay(a: Date, b: Date) {
-    return (
-      a.getFullYear() === b.getFullYear() &&
-      a.getMonth() === b.getMonth() &&
-      a.getDate() === b.getDate()
-    );
+  async requestDelete(userId: string, goalId: string, password: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) throw new Error('User not found');
+
+    const valid = await bcrypt.compare(password, user.passwordHash);
+
+    if (!valid) throw new Error('Wrong password');
+
+    return this.prisma.goal.update({
+      where: { id: goalId },
+      data: {
+        status: 'DELETE_PENDING',
+      },
+    });
   }
 }

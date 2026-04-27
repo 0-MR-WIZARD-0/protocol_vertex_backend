@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable prettier/prettier */
@@ -31,11 +33,20 @@ export class GoalsController {
 
   @Post(':id/mark')
   mark(
+  @CurrentUser() user,
+  @Param('id') id: string,
+  @Body() body: { date: string; timeSlot: string },
+  ) {
+    return this.goalsService.mark(user.id, id, body);
+  }
+
+  @Post(':id/unmark')
+  unmark(
     @CurrentUser() user,
     @Param('id') id: string,
-    @Body('date') date: string,
+    @Body() dto: { date: string; timeSlot: string; password: string },
   ) {
-    return this.goalsService.markDone(user.id, id, date);
+    return this.goalsService.unmark(user.id, id, dto);
   }
 
   @Get('calendar')
@@ -55,5 +66,14 @@ export class GoalsController {
     @Param('id') id: string,
   ) {
     return this.goalsService.getStreak(user.id, id);
+  }
+
+  @Post(':id/delete-request')
+  deleteRequest(
+    @Param('id') id: string,
+    @CurrentUser() user,
+    @Body('password') password: string,
+  ) {
+    return this.goalsService.requestDelete(user.id, id, password);
   }
 }

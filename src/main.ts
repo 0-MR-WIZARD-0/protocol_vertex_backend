@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { NestFactory } from '@nestjs/core';
+import 'dotenv/config';
 import { AppModule } from './app.module';
 import cookieParser from 'cookie-parser';
 import { ValidationPipe } from '@nestjs/common';
@@ -10,7 +11,7 @@ async function bootstrap() {
   app.use(cookieParser());
 
   app.enableCors({
-    origin: true,
+    origin: 'http://localhost:3001',
     credentials: true,
   });
 
