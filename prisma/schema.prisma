@@ -41,7 +41,7 @@ model Goal {
 
   repeatType  RepeatType
   repeatDays  Int[]
-  timesPerDay Int
+  slots       String[]
 
   isDream     Boolean    @default(false)
   dreamId     String?

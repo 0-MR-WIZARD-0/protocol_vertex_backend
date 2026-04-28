@@ -1,15 +1,28 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable prefer-const */
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
+import { CreateGoalDto } from './dto/create-goal.dto';
 
 @Injectable()
 export class GoalsService {
   constructor(private prisma: PrismaService) {}
+
+  async findAll(userId: string) {
+    return this.prisma.goal.findMany({
+      where: {
+        userId,
+        status: { not: 'DELETE_PENDING' },
+      },
+      include: {
+        logs: true, // 🔥 ОБЯЗАТЕЛЬНО
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
 
   private toDateKey(date: Date): string {
     return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
@@ -17,19 +30,55 @@ export class GoalsService {
       .slice(0, 10);
   }
 
-  async create(userId: string, dto: any) {
+  private normalizeDate(date: Date): Date {
+    return new Date(this.toDateKey(date) + 'T00:00:00');
+  }
+
+  private normalizeSlot(slot: string): string {
+    if (['morning', 'day', 'evening'].includes(slot)) return slot;
+
+    if (/^\d{1,2}:\d{2}$/.test(slot)) {
+      const [h, m] = slot.split(':');
+      return `${h.padStart(2, '0')}:${m}`;
+    }
+
+    if (/^\d{1,2}:\d{2}-\d{1,2}:\d{2}$/.test(slot)) {
+      const [start, end] = slot.split('-');
+
+      if (start >= end) throw new Error('Invalid interval');
+
+      const [h1, m1] = start.split(':');
+      const [h2, m2] = end.split(':');
+
+      return `${h1.padStart(2, '0')}:${m1}-${h2.padStart(2, '0')}:${m2}`;
+    }
+
+    throw new Error('Invalid slot format');
+  }
+
+  async create(userId: string, dto: CreateGoalDto) {
+    const today = this.toDateKey(new Date());
+
+    if (dto.startDate < today) throw new Error('Start date cannot be in past');
+    if (dto.deadline < today) throw new Error('Deadline cannot be in past');
+
+    const rawSlots = dto.slots?.length ? dto.slots : ['day'];
+
+    const slots = [...new Set(rawSlots.map((s) => this.normalizeSlot(s)))];
+
     return this.prisma.goal.create({
       data: {
         userId,
         title: dto.title,
-        description: dto.description,
+        description: dto.description ?? null,
 
         startDate: new Date(dto.startDate + 'T00:00:00'),
         deadline: new Date(dto.deadline + 'T23:59:59'),
 
         repeatType: dto.repeatType,
         repeatDays: dto.repeatDays || [],
-        timesPerDay: dto.timesPerDay,
+
+        slots,
 
         isDream: dto.isDream,
         dreamId: dto.dreamId,
@@ -39,37 +88,34 @@ export class GoalsService {
     });
   }
 
-  async findAll(userId: string) {
-    return this.prisma.goal.findMany({
-      where: { userId },
-      include: { logs: true },
-    });
-  }
-
   async mark(userId: string, goalId: string, dto: any) {
-    const goal = await this.prisma.goal.findUnique({
-      where: { id: goalId },
-    });
-
+    const goal = await this.prisma.goal.findUnique({ where: { id: goalId } });
     if (!goal) throw new Error('Goal not found');
 
+    const today = this.toDateKey(new Date());
     const dateKey = this.toDateKey(new Date(dto.date));
 
-    const normalizedDate = new Date(dateKey + 'T00:00:00'); // ✅
+    if (dateKey !== today) throw new Error('Can mark only today');
+
+    const slot = this.normalizeSlot(dto.timeSlot);
+
+    if (!goal.slots.includes(slot)) throw new Error('Invalid slot');
+
+    const date = this.normalizeDate(new Date(dto.date));
 
     return this.prisma.goalLog.upsert({
       where: {
         goalId_date_timeSlot: {
           goalId,
-          date: normalizedDate,
-          timeSlot: dto.timeSlot,
+          date,
+          timeSlot: slot,
         },
       },
       update: {},
       create: {
         goalId,
-        date: normalizedDate,
-        timeSlot: dto.timeSlot,
+        date,
+        timeSlot: slot,
         status: goal.isDream ? 'PENDING' : 'APPROVED',
       },
     });
@@ -83,18 +129,17 @@ export class GoalsService {
     if (!user) throw new Error('User not found');
 
     const valid = await bcrypt.compare(dto.password, user.passwordHash);
-
     if (!valid) throw new Error('Wrong password');
 
-    const dateKey = this.toDateKey(new Date(dto.date));
-    const normalizedDate = new Date(dateKey + 'T00:00:00'); // ✅
+    const slot = this.normalizeSlot(dto.timeSlot);
+    const date = this.normalizeDate(new Date(dto.date));
 
     return this.prisma.goalLog.delete({
       where: {
         goalId_date_timeSlot: {
           goalId,
-          date: normalizedDate,
-          timeSlot: dto.timeSlot,
+          date,
+          timeSlot: slot,
         },
       },
     });
@@ -106,61 +151,96 @@ export class GoalsService {
         userId,
         status: 'APPROVED',
       },
-      include: { logs: true },
+      include: {
+        logs: true,
+      },
     });
+
+    // 🔥 ВСЕГДА свежие логи
+    // const logs = await this.prisma.goalLog.findMany({
+    //   where: {
+    //     goalId: { in: goals.map((g) => g.id) },
+    //     status: 'APPROVED',
+    //   },
+    // });
 
     const dateKey = this.toDateKey(date);
 
-    return goals.map((goal) => {
-      const isActive = this.isGoalActive(goal, date);
+    return goals
+      .map((goal) => {
+        if (!this.isGoalActive(goal, date)) return null;
 
-      const log = goal.logs.find(
-        (l) =>
-          this.toDateKey(new Date(l.date)) === dateKey &&
-          l.status === 'APPROVED',
-      );
+        const logsToday = logs.filter(
+          (l) =>
+            l.goalId === goal.id &&
+            this.toDateKey(new Date(l.date)) === dateKey,
+        );
 
-      return {
-        id: goal.id,
-        title: goal.title,
-        isActive,
-        status: log?.status || null,
-      };
-    });
+        const completedSlots = [...new Set(logsToday.map((l) => l.timeSlot))];
+
+        const dayTotal = goal.slots.length || 1;
+
+        const day = {
+          total: dayTotal,
+          done: completedSlots.length,
+          percent: Math.round((completedSlots.length / dayTotal) * 100),
+        };
+
+        const total = this.calculateGoalProgress(goal, logs);
+
+        console.log('TOTAL BACKEND', goal.id, total);
+
+        return {
+          id: goal.id,
+          title: goal.title,
+          slots: goal.slots,
+          completedSlots,
+          deadline: goal.deadline,
+          day,
+          total,
+        };
+      })
+      .filter(Boolean);
   }
 
-  async getStreak(userId: string, goalId: string) {
-    const goal = await this.prisma.goal.findUnique({
-      where: { id: goalId },
-      include: { logs: true },
-    });
+  private calculateGoalProgress(goal: any, logs: any[]) {
+    const start = new Date(goal.startDate);
+    const end = new Date(goal.deadline);
 
-    if (!goal || goal.userId !== userId) return 0;
+    let total = 0;
+    let done = 0;
 
-    const logs = goal.logs
-      .filter((l) => l.status === 'APPROVED')
-      .map((l) => this.toDateKey(new Date(l.date)));
+    const logsMap = new Map<string, Set<string>>();
 
-    let streak = 0;
-    let current = new Date();
+    for (const l of logs) {
+      if (l.goalId !== goal.id) continue;
 
-    while (true) {
-      const dateKey = this.toDateKey(current);
+      const key = this.toDateKey(new Date(l.date));
 
-      const active = this.isGoalActive(goal, current);
+      if (!logsMap.has(key)) logsMap.set(key, new Set());
 
-      if (!active) {
-        current.setDate(current.getDate() - 1);
+      logsMap.get(key)!.add(l.timeSlot);
+    }
+
+    const current = new Date(start);
+
+    while (current <= end) {
+      if (!this.isGoalActive(goal, current)) {
+        current.setDate(current.getDate() + 1);
         continue;
       }
 
-      if (!logs.includes(dateKey)) break;
+      const key = this.toDateKey(current);
 
-      streak++;
-      current.setDate(current.getDate() - 1);
+      total += goal.slots.length;
+      done += logsMap.get(key)?.size || 0;
+
+      current.setDate(current.getDate() + 1);
     }
 
-    return streak;
+    const percent = total === 0 ? 0 : Math.round((done / total) * 100);
+
+    return { total, done, percent };
   }
 
   private isGoalActive(goal: any, date: Date): boolean {
@@ -194,14 +274,43 @@ export class GoalsService {
     if (!user) throw new Error('User not found');
 
     const valid = await bcrypt.compare(password, user.passwordHash);
-
     if (!valid) throw new Error('Wrong password');
 
     return this.prisma.goal.update({
       where: { id: goalId },
-      data: {
-        status: 'DELETE_PENDING',
-      },
+      data: { status: 'DELETE_PENDING' },
     });
+  }
+
+  async getStreak(userId: string, goalId: string) {
+    const goal = await this.prisma.goal.findUnique({
+      where: { id: goalId },
+      include: { logs: true },
+    });
+
+    if (!goal || goal.userId !== userId) return 0;
+
+    const logs = goal.logs
+      .filter((l) => l.status === 'APPROVED')
+      .map((l) => this.toDateKey(new Date(l.date)));
+
+    let streak = 0;
+    const current = new Date();
+
+    while (true) {
+      const key = this.toDateKey(current);
+
+      if (!this.isGoalActive(goal, current)) {
+        current.setDate(current.getDate() - 1);
+        continue;
+      }
+
+      if (!logs.includes(key)) break;
+
+      streak++;
+      current.setDate(current.getDate() - 1);
+    }
+
+    return streak;
   }
 }

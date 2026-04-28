@@ -1,4 +1,6 @@
-/* eslint-disable @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Goal, GoalLog } from '@prisma/client';
@@ -8,8 +10,8 @@ type GoalWithLogs = Goal & { logs: GoalLog[] };
 type DayGoal = {
   id: string;
   title: string;
-  times: string[];
-  completedTimes: string[];
+  slots: string[];
+  completedSlots: string[];
   deadline: Date;
 };
 
@@ -21,13 +23,6 @@ export class CalendarService {
     return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
       .toISOString()
       .slice(0, 10);
-  }
-
-  private getSlots(goal: Goal): string[] {
-    if (goal.timesPerDay === 1) return ['day'];
-    if (goal.timesPerDay === 2) return ['morning', 'evening'];
-    if (goal.timesPerDay === 3) return ['morning', 'day', 'evening'];
-    return ['day'];
   }
 
   async getDay(userId: string, date: Date) {
@@ -54,7 +49,7 @@ export class CalendarService {
           l.status === 'APPROVED',
       );
 
-      const completedTimes: string[] = Array.from(
+      const completedSlots: string[] = Array.from(
         new Set(
           logsToday
             .map((l) => l.timeSlot)
@@ -65,8 +60,8 @@ export class CalendarService {
       result.push({
         id: goal.id,
         title: goal.title,
-        times: this.getSlots(goal),
-        completedTimes,
+        slots: goal.slots,
+        completedSlots,
         deadline: goal.deadline,
       });
     }
@@ -108,7 +103,7 @@ export class CalendarService {
       for (const goal of goals) {
         if (!this.isGoalActive(goal, date)) continue;
 
-        const slots = this.getSlots(goal);
+        const slots = goal.slots;
         total += slots.length;
 
         const logs = goal.logs.filter(

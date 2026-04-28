@@ -1,9 +1,11 @@
 import {
   IsBoolean,
   IsEnum,
-  IsInt,
   IsOptional,
   IsString,
+  IsArray,
+  ArrayNotEmpty,
+  Matches,
 } from 'class-validator';
 
 export enum RepeatType {
@@ -33,8 +35,17 @@ export class CreateGoalDto {
   @IsOptional()
   repeatDays?: number[];
 
-  @IsInt()
-  timesPerDay: number;
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
+  @Matches(
+    /^((morning|day|evening)|(\d{2}:\d{2})|(\d{2}:\d{2}-\d{2}:\d{2}))$/,
+    {
+      each: true,
+      message: 'Slot must be: morning | day | evening | HH:mm | HH:mm-HH:mm',
+    },
+  )
+  slots: string[];
 
   @IsBoolean()
   isDream: boolean;
