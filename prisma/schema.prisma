@@ -86,6 +86,8 @@ model Task {
   description String?
   date        DateTime
 
+  isDone      Boolean  @default(false)
+
   createdAt   DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -132,6 +134,7 @@ enum GoalStatus {
   APPROVED
   REJECTED
   DELETE_PENDING
+  FAILED
 }
 
 enum LogStatus {

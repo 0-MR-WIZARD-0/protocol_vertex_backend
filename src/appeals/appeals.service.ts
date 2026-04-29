@@ -1,7 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/require-await */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-return */
 import { Injectable, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -42,7 +38,6 @@ export class AppealsService {
     });
   }
 
-  // ADMIN
   async getPending() {
     return this.prisma.appeal.findMany({
       where: { status: 'PENDING' },

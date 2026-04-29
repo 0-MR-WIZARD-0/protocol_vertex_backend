@@ -12,4 +12,4 @@ ADD COLUMN     "slots" TEXT[];
 UPDATE "Goal"
 SET "slots" = ARRAY['day']; -- дефолт для старых данных
 
-ALTER TABLE "Goal" DROP COLUMN "timesPerDay";
+-- ALTER TABLE "Goal" DROP COLUMN "timesPerDay";

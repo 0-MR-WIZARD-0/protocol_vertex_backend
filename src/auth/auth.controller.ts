@@ -48,4 +48,14 @@ export class AuthController {
 
     return { ok: true };
   }
+
+  @Post('logout')
+  logout(@Res({ passthrough: true }) res: Response) {
+    res.clearCookie('refreshToken', {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: true,
+    });
+    return { message: 'ok' };
+  }
 }

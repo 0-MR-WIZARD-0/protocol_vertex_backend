@@ -8,6 +8,7 @@ import { ModerationModule } from './moderation/moderation.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { CalendarModule } from './calendar/calendar.module';
 import { AppealsModule } from './appeals/appeals.module';
+import { TasksModule } from './tasks/tasks.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { AppealsModule } from './appeals/appeals.module';
     AnalyticsModule,
     CalendarModule,
     AppealsModule,
+    TasksModule,
   ],
   controllers: [AppController],
   providers: [AppService],

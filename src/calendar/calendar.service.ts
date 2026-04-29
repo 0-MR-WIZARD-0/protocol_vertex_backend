@@ -1,19 +1,8 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Goal, GoalLog } from '@prisma/client';
 
 type GoalWithLogs = Goal & { logs: GoalLog[] };
-
-type DayGoal = {
-  id: string;
-  title: string;
-  slots: string[];
-  completedSlots: string[];
-  deadline: Date;
-};
 
 @Injectable()
 export class CalendarService {
@@ -26,7 +15,7 @@ export class CalendarService {
   }
 
   async getDay(userId: string, date: Date) {
-    const goals = (await this.prisma.goal.findMany({
+    const goals = await this.prisma.goal.findMany({
       where: {
         userId,
         status: 'APPROVED',
@@ -34,42 +23,57 @@ export class CalendarService {
       include: {
         logs: true,
       },
-    })) as GoalWithLogs[];
+    });
+
+    const tasks = await this.prisma.task.findMany({
+      where: { userId },
+    });
 
     const dateKey = this.toDateKey(date);
 
-    const result: DayGoal[] = [];
+    const goalResult = goals
+      .map((goal) => {
+        if (!this.isGoalActive(goal, date)) return null;
 
-    for (const goal of goals) {
-      if (!this.isGoalActive(goal, date)) continue;
+        const logsToday = goal.logs.filter(
+          (l) =>
+            this.toDateKey(new Date(l.date)) === dateKey &&
+            l.status === 'APPROVED',
+        );
 
-      const logsToday = goal.logs.filter(
-        (l) =>
-          this.toDateKey(new Date(l.date)) === dateKey &&
-          l.status === 'APPROVED',
-      );
+        const completedSlots = [...new Set(logsToday.map((l) => l.timeSlot))];
 
-      const completedSlots: string[] = Array.from(
-        new Set(
-          logsToday
-            .map((l) => l.timeSlot)
-            .filter((t): t is string => typeof t === 'string'),
-        ),
-      );
+        const dayTotal = goal.slots.length || 1;
 
-      result.push({
-        id: goal.id,
-        title: goal.title,
-        slots: goal.slots,
-        completedSlots,
-        deadline: goal.deadline,
-      });
-    }
+        const day = {
+          total: dayTotal,
+          done: completedSlots.length,
+          percent: Math.round((completedSlots.length / dayTotal) * 100),
+        };
+
+        const total = this.calculateGoalProgress(goal);
+
+        return {
+          id: goal.id,
+          title: goal.title,
+          description: goal.description,
+          slots: goal.slots,
+          completedSlots,
+          deadline: goal.deadline,
+          day,
+          total,
+        };
+      })
+      .filter(Boolean);
+
+    const tasksToday = tasks.filter(
+      (t) => this.toDateKey(new Date(t.date)) === dateKey,
+    );
 
     return {
       date,
-      goals: result,
-      tasks: [],
+      goals: goalResult,
+      tasks: tasksToday,
       reminders: [],
     };
   }
@@ -88,9 +92,20 @@ export class CalendarService {
       },
     })) as GoalWithLogs[];
 
+    const tasks = await this.prisma.task.findMany({
+      where: {
+        userId,
+      },
+    });
+
     const days: Record<
       string,
-      { total: number; done: number; percent: number }
+      {
+        total: number;
+        done: number;
+        percent: number;
+        hasTasks?: boolean;
+      }
     > = {};
 
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
@@ -103,8 +118,7 @@ export class CalendarService {
       for (const goal of goals) {
         if (!this.isGoalActive(goal, date)) continue;
 
-        const slots = goal.slots;
-        total += slots.length;
+        total += goal.slots.length;
 
         const logs = goal.logs.filter(
           (l) =>
@@ -116,11 +130,21 @@ export class CalendarService {
         done += uniqueSlots.size;
       }
 
+      const tasksToday = tasks.filter(
+        (t) => this.toDateKey(new Date(t.date)) === key,
+      );
+
+      if (tasksToday.length > 0) {
+        total += tasksToday.length;
+        done += tasksToday.filter((t) => t.isDone).length;
+      }
+
       if (total > 0) {
         days[key] = {
           total,
           done,
           percent: Math.round((done / total) * 100),
+          hasTasks: tasksToday.length > 0,
         };
       }
     }
@@ -153,5 +177,47 @@ export class CalendarService {
       default:
         return false;
     }
+  }
+
+  private calculateGoalProgress(goal: GoalWithLogs) {
+    const start = new Date(goal.startDate);
+    const end = new Date(goal.deadline);
+
+    let total = 0;
+    let done = 0;
+
+    const logsMap = new Map<string, Set<string>>();
+
+    for (const l of goal.logs) {
+      if (l.status !== 'APPROVED') continue;
+
+      const key = this.toDateKey(new Date(l.date));
+
+      if (!logsMap.has(key)) {
+        logsMap.set(key, new Set());
+      }
+
+      logsMap.get(key)!.add(l.timeSlot);
+    }
+
+    const current = new Date(start);
+
+    while (current <= end) {
+      if (!this.isGoalActive(goal, current)) {
+        current.setDate(current.getDate() + 1);
+        continue;
+      }
+
+      const key = this.toDateKey(current);
+
+      total += goal.slots.length;
+      done += logsMap.get(key)?.size || 0;
+
+      current.setDate(current.getDate() + 1);
+    }
+
+    const percent = total === 0 ? 0 : Math.round((done / total) * 100);
+
+    return { total, done, percent };
   }
 }
