@@ -56,30 +56,52 @@ export class GoalsService {
   }
 
   async create(userId: string, dto: CreateGoalDto) {
-    const today = this.toDateKey(new Date());
+  const today = this.toDateKey(new Date());
 
-    if (dto.startDate < today) throw new Error('Start date cannot be in past');
-    if (dto.deadline < today) throw new Error('Deadline cannot be in past');
+  if (dto.startDate < today) throw new Error('Start date cannot be in past');
+  if (dto.deadline < today) throw new Error('Deadline cannot be in past');
 
-    const rawSlots = dto.slots?.length ? dto.slots : ['day'];
-    const slots = [...new Set(rawSlots.map((s) => this.normalizeSlot(s)))];
+  const rawSlots = dto.slots?.length ? dto.slots : ['day'];
+  const slots = [...new Set(rawSlots.map((s) => this.normalizeSlot(s)))];
 
-    return this.prisma.goal.create({
+  let dreamId: string | null = null;
+
+  if (dto.isDream) {
+    if (!dto.dreamTitle || !dto.dreamDescription) {
+      throw new Error('Dream requires title and link');
+    }
+
+    const dream = await this.prisma.dream.create({
       data: {
-        userId,
-        title: dto.title,
-        description: dto.description ?? null,
-        startDate: new Date(dto.startDate + 'T00:00:00'),
-        deadline: new Date(dto.deadline + 'T23:59:59'),
-        repeatType: dto.repeatType,
-        repeatDays: dto.repeatDays || [],
-        slots,
-        isDream: dto.isDream,
-        dreamId: dto.dreamId,
-        status: dto.isDream ? 'PENDING' : 'APPROVED',
+        title: dto.dreamTitle,
+        description: dto.dreamDescription,
       },
     });
+
+    dreamId = dream.id;
   }
+
+  return this.prisma.goal.create({
+    data: {
+      userId,
+      title: dto.title,
+      description: dto.description ?? null,
+
+      startDate: new Date(dto.startDate + 'T00:00:00'),
+      deadline: new Date(dto.deadline + 'T23:59:59'),
+
+      repeatType: dto.repeatType,
+      repeatDays: dto.repeatDays || [],
+
+      slots,
+
+      isDream: dto.isDream,
+      dreamId,
+
+      status: dto.isDream ? 'PENDING' : 'APPROVED',
+    },
+  });
+}
 
   async mark(userId: string, goalId: string, dto: any) {
     const goal = await this.prisma.goal.findUnique({

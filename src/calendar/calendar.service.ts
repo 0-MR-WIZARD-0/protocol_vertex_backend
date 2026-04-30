@@ -18,10 +18,13 @@ export class CalendarService {
     const goals = await this.prisma.goal.findMany({
       where: {
         userId,
-        status: 'APPROVED',
+        status: {
+          in: ['APPROVED', 'PENDING'],
+        },
       },
       include: {
         logs: true,
+        dream: true,
       },
     });
 
@@ -45,13 +48,19 @@ export class CalendarService {
 
         const dayTotal = goal.slots.length || 1;
 
-        const day = {
-          total: dayTotal,
-          done: completedSlots.length,
-          percent: Math.round((completedSlots.length / dayTotal) * 100),
-        };
+        const isApproved = goal.status === 'APPROVED';
 
-        const total = this.calculateGoalProgress(goal);
+        const day = isApproved
+          ? {
+              total: dayTotal,
+              done: completedSlots.length,
+              percent: Math.round((completedSlots.length / dayTotal) * 100),
+            }
+          : { total: 0, done: 0, percent: 0 };
+
+        const total = isApproved
+          ? this.calculateGoalProgress(goal)
+          : { total: 0, done: 0, percent: 0 };
 
         return {
           id: goal.id,
@@ -62,9 +71,11 @@ export class CalendarService {
           deadline: goal.deadline,
           day,
           total,
+          dream: goal.dream ?? null,
+          status: goal.status,
         };
       })
-      .filter(Boolean);
+      .filter((g) => g !== null);
 
     const tasksToday = tasks.filter(
       (t) => this.toDateKey(new Date(t.date)) === dateKey,

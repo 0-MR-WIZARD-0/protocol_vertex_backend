@@ -53,4 +53,7 @@ export class CreateGoalDto {
   @IsOptional()
   @IsString()
   dreamId?: string;
+
+  dreamTitle?: string;
+  dreamDescription?: string;
 }
