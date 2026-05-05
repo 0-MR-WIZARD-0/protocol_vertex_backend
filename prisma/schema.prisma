@@ -8,18 +8,20 @@ datasource db {
 }
 
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
+  id           String @id @default(uuid())
+  email        String @unique
   passwordHash String
-  role         Role     @default(USER)
-  createdAt    DateTime @default(now())
-
-  sessions  Session[]
-  goals     Goal[]
-  tasks     Task[]
-  notifications NotificationSetting[]
+  role         Role   @default(USER)
 
   telegramId String?
+  timezone   String  @default("UTC")
+
+  createdAt DateTime @default(now())
+
+  sessions      Session[]
+  goals         Goal[]
+  tasks         Task[]
+  notifications NotificationSetting[]
 }
 
 model Session {
@@ -54,8 +56,9 @@ model Goal {
   user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   dream Dream? @relation(fields: [dreamId], references: [id])
 
-  logs    GoalLog[]
-  appeals Appeal[]
+  logs          GoalLog[]
+  appeals       Appeal[]
+  notifications NotificationSetting[]
 }
 
 model Dream {
@@ -97,12 +100,12 @@ model Task {
 model NotificationSetting {
   id       String   @id @default(uuid())
   userId   String
-
-  times    String[] // ["09:00", "14:00", "20:00"]
-
+  goalId   String?
+  times    String[]
   isActive Boolean  @default(true)
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goal Goal? @relation(fields: [goalId], references: [id], onDelete: Cascade)
 }
 
 model Appeal {
