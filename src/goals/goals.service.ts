@@ -9,18 +9,28 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { CreateGoalDto } from './dto/create-goal.dto';
+import { GoalStatus } from '@prisma/client';
 
 @Injectable()
 export class GoalsService {
   constructor(private prisma: PrismaService) {}
 
-  async findAll(userId: string) {
-    return this.prisma.goal.findMany({
+  async findAll(user: any) {
+  return this.prisma.goal.findMany({
       where: {
-        userId,
-        status: { not: 'DELETE_PENDING' },
+        userId: user.id,
+        status: { not: GoalStatus.DELETE_PENDING },
+        OR: [
+          { status: GoalStatus.APPROVED },
+          ...(user.role === 'ADMIN'
+            ? [{ status: GoalStatus.PENDING }]
+            : []),
+        ],
       },
-      include: { logs: true },
+      include: {
+        logs: true,
+        dream: true,
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -56,56 +66,55 @@ export class GoalsService {
     throw new Error('Invalid slot format');
   }
 
-  async create(userId: string, dto: CreateGoalDto) {
-  const today = this.toDateKey(new Date());
+  async create(user: any, dto: CreateGoalDto) {
+    const today = this.toDateKey(new Date());
 
-  if (dto.startDate < today) throw new Error('Start date cannot be in past');
-  if (dto.deadline < today) throw new Error('Deadline cannot be in past');
+    if (dto.startDate < today) throw new Error('Start date cannot be in past');
+    if (dto.deadline < today) throw new Error('Deadline cannot be in past');
 
-  const rawSlots = dto.slots?.length ? dto.slots : ['day'];
-  const slots = [...new Set(rawSlots.map((s) => this.normalizeSlot(s)))];
+    const rawSlots = dto.slots?.length ? dto.slots : ['day'];
+    const slots = [...new Set(rawSlots.map((s) => this.normalizeSlot(s)))];
 
-  let dreamId: string | null = null;
+    let dreamId: string | null = null;
 
-  if (dto.isDream) {
-    if (!dto.dreamTitle || !dto.dreamDescription) {
-      throw new Error('Dream fields required');
+    if (dto.isDream) {
+      if (!dto.dreamTitle || !dto.dreamDescription) {
+        throw new Error('Dream requires title and link');
+      }
+
+      const dream = await this.prisma.dream.create({
+        data: {
+          title: dto.dreamTitle,
+          description: dto.dreamDescription,
+        },
+      });
+
+      dreamId = dream.id;
     }
 
-    const dream = await this.prisma.dream.create({
+    const status =
+      user.role === 'ADMIN'
+        ? 'APPROVED'
+        : dto.isDream
+        ? 'PENDING'
+        : 'APPROVED';
+
+    return this.prisma.goal.create({
       data: {
-        title: dto.dreamTitle,
-        description: dto.dreamDescription,
+        userId: user.id,
+        title: dto.title,
+        description: dto.description ?? null,
+        startDate: new Date(dto.startDate + 'T00:00:00'),
+        deadline: new Date(dto.deadline + 'T23:59:59'),
+        repeatType: dto.repeatType,
+        repeatDays: dto.repeatDays || [],
+        slots,
+        isDream: dto.isDream,
+        dreamId,
+        status,
       },
     });
-
-    dreamId = dream.id;
   }
-
-  return this.prisma.goal.create({
-    data: {
-      userId,
-      title: dto.title,
-      description: dto.description ?? null,
-
-      startDate: new Date(dto.startDate + 'T00:00:00'),
-      deadline: new Date(dto.deadline + 'T23:59:59'),
-
-      repeatType: dto.repeatType,
-      repeatDays: dto.repeatDays || [],
-
-      slots,
-
-      isDream: dto.isDream,
-      dreamId,
-
-      status: dto.isDream ? 'PENDING' : 'APPROVED',
-    },
-    include: {
-      dream: true,
-    },
-  });
-}
 
   async mark(userId: string, goalId: string, dto: any) {
     const goal = await this.prisma.goal.findUnique({
@@ -113,7 +122,13 @@ export class GoalsService {
       include: { logs: true },
     });
 
-    if (!goal) throw new Error('Goal not found');
+    if (!goal || goal.userId !== userId) {
+      throw new Error('Goal not found');
+    }
+
+    if (goal.status !== 'APPROVED') {
+      throw new Error('Goal not approved');
+    }
 
     if (this.isGoalFailed(goal, goal.logs)) {
       throw new Error('Goal already failed');
@@ -139,7 +154,7 @@ export class GoalsService {
         goalId,
         date,
         timeSlot: slot,
-        status: goal.isDream ? 'PENDING' : 'APPROVED',
+        status: 'APPROVED',
       },
     });
   }
@@ -150,7 +165,9 @@ export class GoalsService {
       include: { logs: true },
     });
 
-    if (!goal) throw new Error('Goal not found');
+    if (!goal || goal.userId !== userId) {
+      throw new Error('Goal not found');
+    }
 
     if (this.isGoalFailed(goal, goal.logs)) {
       throw new Error('Cannot edit failed goal');
@@ -175,13 +192,46 @@ export class GoalsService {
     });
   }
 
-  async getByDate(userId: string, date: Date) {
+  async requestDelete(userId: string, goalId: string, password: string) {
+    const goal = await this.prisma.goal.findUnique({
+      where: { id: goalId },
+    });
+
+    if (!goal || goal.userId !== userId) {
+      throw new Error('Goal not found');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) throw new Error('User not found');
+
+    const valid = await bcrypt.compare(password, user.passwordHash);
+    if (!valid) throw new Error('Wrong password');
+
+    return this.prisma.goal.update({
+      where: { id: goalId },
+      data: { status: 'DELETE_PENDING' },
+    });
+  }
+
+  async getByDate(user: any, date: Date) {
     const goals = await this.prisma.goal.findMany({
       where: {
-        userId,
-        status: 'APPROVED',
+        userId: user.id,
+        status: { not: GoalStatus.DELETE_PENDING },
+        OR: [
+          { status: GoalStatus.APPROVED },
+          ...(user.role === 'ADMIN'
+            ? [{ status: GoalStatus.PENDING }]
+            : []),
+        ],
       },
-      include: { logs: true },
+      include: {
+        logs: true,
+        dream: true,
+      },
     });
 
     const dateKey = this.toDateKey(date);
@@ -200,28 +250,71 @@ export class GoalsService {
 
         const dayTotal = goal.slots.length || 1;
 
-        const day = {
-          total: dayTotal,
-          done: completedSlots.length,
-          percent: Math.round((completedSlots.length / dayTotal) * 100),
-        };
+        const isApproved = goal.status === 'APPROVED';
 
-        const total = this.calculateGoalProgress(goal);
+        const day = isApproved
+          ? {
+              total: dayTotal,
+              done: completedSlots.length,
+              percent: Math.round((completedSlots.length / dayTotal) * 100),
+            }
+          : { total: 0, done: 0, percent: 0 };
 
-        const isFailed = this.isGoalFailed(goal, goal.logs);
+        const total = isApproved
+          ? this.calculateGoalProgress(goal)
+          : { total: 0, done: 0, percent: 0 };
+
+        const isFailed = isApproved
+          ? this.isGoalFailed(goal, goal.logs)
+          : false;
 
         return {
           id: goal.id,
           title: goal.title,
+          description: goal.description,
           slots: goal.slots,
           completedSlots,
           deadline: goal.deadline,
           day,
           total,
           isFailed,
+          dream: goal.dream,
+          status: goal.status,
         };
       })
       .filter(Boolean);
+  }
+
+  async getStreak(userId: string, goalId: string) {
+    const goal = await this.prisma.goal.findUnique({
+      where: { id: goalId },
+      include: { logs: true },
+    });
+
+    if (!goal || goal.userId !== userId) return 0;
+
+    const logs = goal.logs
+      .filter((l) => l.status === 'APPROVED')
+      .map((l) => this.toDateKey(new Date(l.date)));
+
+    let streak = 0;
+    const current = new Date();
+
+    while (true) {
+      const key = this.toDateKey(current);
+
+      if (!this.isGoalActive(goal, current)) {
+        current.setDate(current.getDate() - 1);
+        continue;
+      }
+
+      if (!logs.includes(key)) break;
+
+      streak++;
+      current.setDate(current.getDate() - 1);
+    }
+
+    return streak;
   }
 
   private calculateGoalProgress(goal: any) {
@@ -309,9 +402,7 @@ export class GoalsService {
 
       const unique = new Set(dayLogs.map((l) => l.timeSlot));
 
-      if (unique.size < goal.slots.length) {
-        return true;
-      }
+      if (unique.size < goal.slots.length) return true;
 
       current.setDate(current.getDate() + 1);
     }
@@ -319,6 +410,56 @@ export class GoalsService {
     return false;
   }
 
-  async requestDelete(userId: string, goalId: string, password: string) { const user = await this.prisma.user.findUnique({ where: { id: userId }, }); if (!user) throw new Error('User not found'); const valid = await bcrypt.compare(password, user.passwordHash); if (!valid) throw new Error('Wrong password'); return this.prisma.goal.update({ where: { id: goalId }, data: { status: 'DELETE_PENDING' }, }); } 
-  async getStreak(userId: string, goalId: string) { const goal = await this.prisma.goal.findUnique({ where: { id: goalId }, include: { logs: true }, }); if (!goal || goal.userId !== userId) return 0; const logs = goal.logs .filter((l) => l.status === 'APPROVED') .map((l) => this.toDateKey(new Date(l.date))); let streak = 0; const current = new Date(); while (true) { const key = this.toDateKey(current); if (!this.isGoalActive(goal, current)) { current.setDate(current.getDate() - 1); continue; } if (!logs.includes(key)) break; streak++; current.setDate(current.getDate() - 1); } return streak; }
+  async getPendingCount(userId: string) {
+    return this.prisma.goal.count({
+      where: {
+        userId,
+        status: 'PENDING',
+      },
+    });
+  }
+
+  async getLogsByDate(userId: string, goalId: string, date: Date) {
+  return this.prisma.goalLog.findMany({
+    where: {
+      goalId,
+      goal: {
+        userId,
+      },
+      date: {
+        gte: new Date(date.toISOString().slice(0, 10) + 'T00:00:00'),
+        lt: new Date(date.toISOString().slice(0, 10) + 'T23:59:59'),
+      },
+    },
+  });
+}
+
+async getGoalDay(userId: string, goalId: string, date: string) {
+  const goal = await this.prisma.goal.findUnique({
+    where: { id: goalId },
+    include: { logs: true },
+  });
+
+  if (!goal || goal.userId !== userId) {
+    throw new Error('Goal not found');
+  }
+
+  const dateKey = this.toDateKey(new Date(date));
+
+  const logsToday = goal.logs.filter(
+    (l) =>
+      this.toDateKey(new Date(l.date)) === dateKey &&
+      l.status === 'APPROVED',
+  );
+
+  const completed = logsToday.map((l) => l.timeSlot);
+
+  const missed = goal.slots.filter((s) => !completed.includes(s));
+
+  return {
+    slots: goal.slots,
+    completed,
+    missed,
+  };
+}
 }

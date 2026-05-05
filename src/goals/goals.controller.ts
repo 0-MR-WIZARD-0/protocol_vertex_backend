@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable prettier/prettier */
@@ -21,7 +23,7 @@ export class GoalsController {
 
   @Post()
   create(@CurrentUser() user, @Body() dto: any) {
-    return this.goalsService.create(user.id, dto);
+    return this.goalsService.create(user, dto);
   }
 
   @Get()
@@ -47,17 +49,6 @@ export class GoalsController {
     return this.goalsService.unmark(user.id, id, dto);
   }
 
-  @Get('calendar')
-  calendar(
-    @CurrentUser() user,
-    @Query('date') date: string,
-  ) {
-    return this.goalsService.getByDate(
-      user.id,
-      new Date(date),
-    );
-  }
-
   @Get(':id/streak')
   streak(
     @CurrentUser() user,
@@ -74,4 +65,27 @@ export class GoalsController {
   ) {
     return this.goalsService.requestDelete(user.id, id, password);
   }
+
+  @Get('pending-count')
+  getPendingCount(@CurrentUser() user) {
+    return this.goalsService.getPendingCount(user.id);
+  }
+
+  @Get('logs-by-date')
+  getLogsByDate(
+    @CurrentUser() user,
+    @Query('goalId') goalId: string,
+    @Query('date') date: string,
+  ) {
+    return this.goalsService.getLogsByDate(user.id, goalId, new Date(date));
+  }
+
+  @Get(':id/day')
+getGoalDay(
+  @CurrentUser() user,
+  @Param('id') id: string,
+  @Query('date') date: string,
+) {
+  return this.goalsService.getGoalDay(user.id, id, date);
+}
 }

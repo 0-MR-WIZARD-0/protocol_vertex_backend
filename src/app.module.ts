@@ -9,6 +9,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { CalendarModule } from './calendar/calendar.module';
 import { AppealsModule } from './appeals/appeals.module';
 import { TasksModule } from './tasks/tasks.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { TasksModule } from './tasks/tasks.module';
     CalendarModule,
     AppealsModule,
     TasksModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

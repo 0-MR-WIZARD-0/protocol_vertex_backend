@@ -1,3 +1,7 @@
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable prettier/prettier */
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Goal, GoalLog } from '@prisma/client';
@@ -14,11 +18,41 @@ export class CalendarService {
       .slice(0, 10);
   }
 
+    private isGoalFailed(goal: any, logs: any[]): boolean {
+    const today = this.toDateKey(new Date());
+    const current = new Date(goal.startDate);
+
+    while (this.toDateKey(current) < today) {
+      if (!this.isGoalActive(goal, current)) {
+        current.setDate(current.getDate() + 1);
+        continue;
+      }
+
+      const key = this.toDateKey(current);
+
+      const dayLogs = logs.filter(
+        (l) =>
+          this.toDateKey(new Date(l.date)) === key &&
+          l.status === 'APPROVED',
+      );
+
+      const unique = new Set(dayLogs.map((l) => l.timeSlot));
+
+      if (unique.size < goal.slots.length) return true;
+
+      current.setDate(current.getDate() + 1);
+    }
+
+    return false;
+  }
+
   async getDay(userId: string, date: Date) {
     const goals = await this.prisma.goal.findMany({
       where: {
         userId,
-        status: "APPROVED"
+        status: {
+          in: ['APPROVED', 'PENDING'],
+        },
       },
       include: {
         logs: true,
@@ -48,6 +82,11 @@ export class CalendarService {
 
         const isApproved = goal.status === 'APPROVED';
 
+        const isFailed =
+          goal.status === 'APPROVED'
+            ? this.isGoalFailed(goal, goal.logs)
+            : false;
+
         const day = isApproved
           ? {
               total: dayTotal,
@@ -57,7 +96,7 @@ export class CalendarService {
           : { total: 0, done: 0, percent: 0 };
 
         const total = isApproved
-          ? this.calculateGoalProgress(goal as GoalWithLogs)
+          ? this.calculateGoalProgress(goal)
           : { total: 0, done: 0, percent: 0 };
 
         return {
@@ -69,11 +108,12 @@ export class CalendarService {
           deadline: goal.deadline,
           day,
           total,
-          dream: goal.dream || null,
+          dream: goal.dream ?? null,
           status: goal.status,
+          isFailed
         };
       })
-      .filter(Boolean);
+      .filter((g) => g !== null);
 
     const tasksToday = tasks.filter(
       (t) => this.toDateKey(new Date(t.date)) === dateKey,
@@ -94,7 +134,7 @@ export class CalendarService {
     const goals = (await this.prisma.goal.findMany({
       where: {
         userId,
-        status: 'APPROVED', // 🔥 только подтвержденные
+        status: 'APPROVED',
       },
       include: {
         logs: true,
@@ -114,6 +154,7 @@ export class CalendarService {
         done: number;
         percent: number;
         hasTasks?: boolean;
+        hasGoals?: boolean;
       }
     > = {};
 
@@ -123,9 +164,12 @@ export class CalendarService {
 
       let total = 0;
       let done = 0;
+      let hasGoals = false;
 
       for (const goal of goals) {
         if (!this.isGoalActive(goal, date)) continue;
+
+        hasGoals = true;
 
         total += goal.slots.length;
 
@@ -155,6 +199,7 @@ export class CalendarService {
           done,
           percent: Math.round((done / total) * 100),
           hasTasks: tasksToday.length > 0,
+          hasGoals,
         };
       }
     }

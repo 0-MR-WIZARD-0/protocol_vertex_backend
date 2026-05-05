@@ -22,9 +22,21 @@ export class AppealsController {
   @Post()
   create(
     @CurrentUser() user,
-    @Body() body: { goalLogId: string; message: string },
+    @Body()
+    body: {
+      goalId: string;
+      date: string;
+      timeSlot: string;
+      message: string;
+    },
   ) {
-    return this.service.create(user.id, body.goalLogId, body.message);
+    return this.service.create(
+      user.id,
+      body.goalId,
+      body.date,
+      body.timeSlot,
+      body.message,
+    );
   }
 
   @UseGuards(AuthGuard)

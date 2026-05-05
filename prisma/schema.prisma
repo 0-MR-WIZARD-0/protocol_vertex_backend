@@ -14,16 +14,18 @@ model User {
   role         Role     @default(USER)
   createdAt    DateTime @default(now())
 
-  sessions     Session[]
-  goals        Goal[]
-  tasks        Task[]
-  reminders    Reminder[]
+  sessions  Session[]
+  goals     Goal[]
+  tasks     Task[]
+  notifications NotificationSetting[]
+
+  telegramId String?
 }
 
 model Session {
   id               String   @id @default(uuid())
   userId           String
-  tokenId          String @unique
+  tokenId          String   @unique
   refreshTokenHash String
   expiresAt        DateTime
   createdAt        DateTime @default(now())
@@ -39,24 +41,25 @@ model Goal {
   startDate   DateTime @default(now())
   deadline    DateTime
 
-  repeatType  RepeatType
-  repeatDays  Int[]
-  slots       String[]
+  repeatType RepeatType
+  repeatDays Int[]
+  slots      String[]
 
-  isDream     Boolean    @default(false)
-  dreamId     String?
-  status      GoalStatus @default(PENDING)
+  isDream Boolean    @default(false)
+  dreamId String?
+  status  GoalStatus @default(PENDING)
 
-  createdAt   DateTime   @default(now())
+  createdAt DateTime @default(now())
 
-  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   dream Dream? @relation(fields: [dreamId], references: [id])
 
-  logs  GoalLog[]
+  logs    GoalLog[]
+  appeals Appeal[]
 }
 
 model Dream {
-  id          String   @id @default(uuid())
+  id          String  @id @default(uuid())
   title       String
   description String?
 
@@ -64,17 +67,15 @@ model Dream {
 }
 
 model GoalLog {
-  id        String   @id @default(uuid())
-  goalId    String
-  date      DateTime
-  timeSlot  String
-  status    LogStatus @default(PENDING)
+  id       String    @id @default(uuid())
+  goalId   String
+  date     DateTime
+  timeSlot String
+  status   LogStatus @default(PENDING)
 
   createdAt DateTime @default(now())
 
   goal Goal @relation(fields: [goalId], references: [id], onDelete: Cascade)
-
-  appeals Appeal[]
 
   @@unique([goalId, date, timeSlot])
 }
@@ -86,35 +87,35 @@ model Task {
   description String?
   date        DateTime
 
-  isDone      Boolean  @default(false)
+  isDone Boolean @default(false)
 
-  createdAt   DateTime @default(now())
+  createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-model Reminder {
-  id          String   @id @default(uuid())
-  userId      String
-  title       String
-  description String?
-  date        DateTime
+model NotificationSetting {
+  id       String   @id @default(uuid())
+  userId   String
 
-  createdAt   DateTime @default(now())
+  times    String[] // ["09:00", "14:00", "20:00"]
+
+  isActive Boolean  @default(true)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Appeal {
-  id        String   @id @default(uuid())
-  goalLogId String
-  message   String
+  id       String   @id @default(uuid())
+  goalId   String
+  date     DateTime
+  timeSlot String
+  message  String
 
   status    AppealStatus @default(PENDING)
+  createdAt DateTime     @default(now())
 
-  createdAt DateTime @default(now())
-
-  goalLog GoalLog @relation(fields: [goalLogId], references: [id], onDelete: Cascade)
+  goal Goal @relation(fields: [goalId], references: [id], onDelete: Cascade)
 }
 
 enum Role {

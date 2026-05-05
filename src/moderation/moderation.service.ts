@@ -8,6 +8,14 @@ export class ModerationService {
   async getPendingGoals() {
     return this.prisma.goal.findMany({
       where: { status: 'PENDING' },
+      include: {
+        dream: true,
+        user: {
+          select: {
+            email: true,
+          },
+        },
+      },
     });
   }
 
@@ -28,7 +36,17 @@ export class ModerationService {
   async getPendingLogs() {
     return this.prisma.goalLog.findMany({
       where: { status: 'PENDING' },
-      include: { goal: true },
+      include: {
+        goal: {
+          include: {
+            user: {
+              select: {
+                email: true,
+              },
+            },
+          },
+        },
+      },
     });
   }
 
