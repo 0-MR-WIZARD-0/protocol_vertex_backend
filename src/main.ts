@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
+
 import { NestFactory } from '@nestjs/core';
 import 'dotenv/config';
 import { AppModule } from './app.module';
@@ -11,7 +12,7 @@ async function bootstrap() {
   app.use(cookieParser());
 
   app.enableCors({
-    origin: 'http://localhost:3001',
+    origin: process.env.FRONTEND_URL,
     credentials: true,
   });
 
@@ -23,7 +24,9 @@ async function bootstrap() {
     }),
   );
 
-  await app.listen(3000);
+  const port = Number(process.env.PORT) || 4000;
+
+  await app.listen(port);
 }
 
 bootstrap();
