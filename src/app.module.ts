@@ -10,6 +10,7 @@ import { CalendarModule } from './calendar/calendar.module';
 import { AppealsModule } from './appeals/appeals.module';
 import { TasksModule } from './tasks/tasks.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     AppealsModule,
     TasksModule,
     NotificationsModule,
+    UsersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

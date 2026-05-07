@@ -14,6 +14,7 @@ model User {
   role         Role   @default(USER)
 
   telegramId String?
+  telegramCode String?
   timezone   String  @default("UTC")
 
   createdAt DateTime @default(now())
