@@ -11,6 +11,7 @@ import { AppealsModule } from './appeals/appeals.module';
 import { TasksModule } from './tasks/tasks.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { UsersModule } from './users/users.module';
+import { TelegramModule } from './telegram/telegram.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { UsersModule } from './users/users.module';
     TasksModule,
     NotificationsModule,
     UsersModule,
+    TelegramModule,
   ],
   controllers: [AppController],
   providers: [AppService],
