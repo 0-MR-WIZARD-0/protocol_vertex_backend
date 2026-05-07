@@ -16,7 +16,7 @@ export class TelegramController {
   ) {
     const user = await this.prisma.user.findFirst({
       where: {
-        telegramCode: body.code,
+        telegramCode: body.code.toUpperCase(),
       },
     });
 
