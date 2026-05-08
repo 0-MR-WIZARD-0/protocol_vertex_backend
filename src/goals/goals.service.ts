@@ -192,9 +192,11 @@ export class GoalsService {
     });
   }
 
-  async requestDelete(userId: string, goalId: string, password: string) {
+  async requestDelete(userId: string,goalId: string,password: string) {
     const goal = await this.prisma.goal.findUnique({
-      where: { id: goalId },
+      where: {
+        id: goalId,
+      },
     });
 
     if (!goal || goal.userId !== userId) {
@@ -202,18 +204,30 @@ export class GoalsService {
     }
 
     const user = await this.prisma.user.findUnique({
-      where: { id: userId },
+      where: {
+        id: userId,
+      },
     });
 
-    if (!user) throw new Error('User not found');
+    if (!user) {
+      throw new Error('User not found');
+    }
 
-    const valid = await bcrypt.compare(password, user.passwordHash);
-    if (!valid) throw new Error('Wrong password');
+    const valid = await bcrypt.compare(password,user.passwordHash);
 
-    return this.prisma.goal.update({
-      where: { id: goalId },
-      data: { status: 'DELETE_PENDING' },
+    if (!valid) {
+      throw new Error('Wrong password');
+    }
+
+    await this.prisma.goal.delete({
+      where: {
+        id: goalId,
+      },
     });
+
+    return {
+      success: true,
+    };
   }
 
   async getByDate(user: any, date: Date) {

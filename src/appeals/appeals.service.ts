@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Injectable, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -27,6 +25,7 @@ export class AppealsService {
         goalId,
         date: new Date(date),
         timeSlot,
+        status: 'PENDING',
       },
     });
 
@@ -114,26 +113,32 @@ export class AppealsService {
   async reject(id: string) {
     const appeal = await this.prisma.appeal.findUnique({
       where: { id },
+
       include: {
         goal: true,
       },
     });
 
-    if (!appeal) throw new Error('Appeal not found');
-
-    const goal = appeal.goal;
-
-    const today = new Date();
-
-    if (goal.deadline < today) {
-      await this.prisma.goal.delete({
-        where: { id: goal.id },
-      });
+    if (!appeal) {
+      throw new Error('Appeal not found');
     }
 
-    return this.prisma.appeal.update({
+    await this.prisma.appeal.update({
       where: { id },
-      data: { status: 'REJECTED' },
+
+      data: {
+        status: 'REJECTED',
+      },
     });
+
+    await this.prisma.goal.delete({
+      where: {
+        id: appeal.goal.id,
+      },
+    });
+
+    return {
+      success: true,
+    };
   }
 }

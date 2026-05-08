@@ -14,11 +14,11 @@ import { AuthGuard } from 'src/auth/auth.guard';
 import { AdminGuard } from '../guard/admin.guard';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 
+@UseGuards(AuthGuard)
 @Controller('appeals')
 export class AppealsController {
   constructor(private service: AppealsService) {}
 
-  @UseGuards(AuthGuard)
   @Post()
   create(
     @CurrentUser() user,
@@ -39,25 +39,24 @@ export class AppealsController {
     );
   }
 
-  @UseGuards(AuthGuard)
   @Get('my')
   my(@CurrentUser() user) {
     return this.service.getMy(user.id);
   }
 
-  @UseGuards(AuthGuard, AdminGuard)
+  @UseGuards(AdminGuard)
   @Get()
   pending() {
     return this.service.getPending();
   }
 
-  @UseGuards(AuthGuard, AdminGuard)
+  @UseGuards(AdminGuard)
   @Patch(':id/approve')
   approve(@Param('id') id: string) {
     return this.service.approve(id);
   }
 
-  @UseGuards(AuthGuard, AdminGuard)
+  @UseGuards(AdminGuard)
   @Patch(':id/reject')
   reject(@Param('id') id: string) {
     return this.service.reject(id);
