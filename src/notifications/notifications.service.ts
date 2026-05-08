@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
-/* eslint-disable @typescript-eslint/require-await */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable @typescript-eslint/no-unsafe-call */
@@ -161,17 +160,37 @@ export class NotificationsService {
       });
   }
 
+  private progressBar(percent: number) {
+    const total = 10;
+
+    const filled = Math.round((percent / 100) * total);
+
+    return '█'.repeat(filled) + '░'.repeat(total - filled);
+  }
+
   private buildMessage(goals: any[]) {
-    let text = '📊 Твои цели:\n\n';
+    const today = new Date().toLocaleDateString('ru-RU');
+
+    let text = `🚀 <b>Аналитика на ${today}</b>\n\n`;
 
     goals.forEach((g, i) => {
-      const deadline = new Date(g.deadline).toLocaleDateString();
+      const deadline = new Date(g.deadline).toLocaleDateString('ru-RU');
 
-      text += `${i + 1}. ${g.title}\n`;
-      text += `📅 До: ${deadline}\n`;
-      text += `📈 Прогресс: ${g.percent}%\n`;
-      text += `🔥 Сегодня: ${g.todayDone}/${g.todayTotal}\n`;
-      text += `⏳ Осталось: ${g.remaining}\n\n`;
+      const bar = this.progressBar(g.percent);
+
+      text += `🎯 <b>${g.title}</b>\n`;
+
+      text += `┣ 📈 Прогресс: ${bar} ${g.percent}%\n`;
+
+      text += `┣ ✅ Выполнено сегодня: ${g.todayDone}/${g.todayTotal}\n`;
+
+      text += `┣ ⏳ Дней до завершения: ${g.remaining}\n`;
+
+      text += `┗ 📅 Окончание: ${deadline}\n`;
+
+      if (i !== goals.length - 1) {
+        text += `\n`;
+      }
     });
 
     return text;

@@ -23,4 +23,20 @@ export class UsersService {
       code,
     };
   }
+
+  async removeTelegram(userId: string) {
+    await this.prisma.user.update({
+      where: {
+        id: userId,
+      },
+      data: {
+        telegramId: null,
+        telegramCode: null,
+      },
+    });
+
+    return {
+      success: true,
+    };
+  }
 }

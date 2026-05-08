@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-import { Controller, Post, UseGuards } from '@nestjs/common';
+import { Controller, Delete, Post, UseGuards } from '@nestjs/common';
 
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { UsersService } from './users.service';
@@ -14,5 +14,10 @@ export class UsersController {
   @Post('telegram-code')
   async createTelegramCode(@CurrentUser() user) {
     return this.usersService.createTelegramCode(user.id);
+  }
+
+  @Delete('telegram')
+  removeTelegram(@CurrentUser() user) {
+    return this.usersService.removeTelegram(user.id);
   }
 }
