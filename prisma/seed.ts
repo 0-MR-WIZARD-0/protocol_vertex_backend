@@ -1,11 +1,26 @@
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import * as dotenv from 'dotenv';
+
+const envFile =
+  process.env.NODE_ENV === 'production'
+    ? '.env.production'
+    : '.env.development';
+
+dotenv.config({
+  path: envFile,
+});
 
 const prisma = new PrismaClient();
 
 async function main() {
-  const email = 'admin@test.com';
-  const password = 'admin123';
+  const email = process.env.ADMIN_EMAIL;
+
+  const password = process.env.ADMIN_PASSWORD;
+
+  if (!email || !password) {
+    throw new Error(`ADMIN_EMAIL or ADMIN_PASSWORD missing in ${envFile}`);
+  }
 
   const existing = await prisma.user.findUnique({
     where: { email },
